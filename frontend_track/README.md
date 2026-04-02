@@ -1,178 +1,133 @@
-# TaxStreem Internship — Frontend Track
-### TypeScript / React (or Next.js)
+# TaxStreem — Transaction Dashboard
+
+A client-side transaction dashboard built with Next.js 13+ (App Router), TypeScript, and Tailwind CSS.
 
 ---
 
-## Overview
+## How to Run
 
-Welcome to the TaxStreem Frontend Internship Assessment.
-
-You're not being evaluated on whether you've memorized framework APIs. You're being evaluated on **how you manage state, handle real-world async complexity, and communicate through your UI**. We care about thoughtful decisions, not pixel-perfect design.
-
-> ⏱️ **Time Budget:** 2–4 hours maximum. Prioritise working software and clean thinking over completeness.
-
----
-
-## The Task: Transaction Dashboard — Data Fetch + State Management
-
-At TaxStreem, our internal teams rely on dashboards to monitor transaction data in real time. You're building the foundational UI layer for such a dashboard.
-
----
-
-## Specification
-
-### Data Source
-
-```
-GET https://jsonplaceholder.typicode.com/posts
+```bash
+node -v        # must be v18+
+npm install
+npm run dev
 ```
 
-> Treat each post as a "transaction record":
-> - `id` → Transaction ID
-> - `userId` → Account ID
-> - `title` → Transaction Reference
-> - `body` → Transaction Description
+Open [http://localhost:3000](http://localhost:3000).
+
+To test the **error state**, open `src/hooks/useTransactions.ts`, comment out the real export at the bottom, and uncomment the simulated error block above it. A commented guide is already in that file.
 
 ---
 
-## What to Build
+## Approach
 
-### Core Features (Required)
+### State Management
 
-1. **Transaction List View**
-   - Display all records with: Transaction ID, Account ID, Reference (title), short Description preview
-   - Show a **loading skeleton** while data is being fetched
-   - Show a clear **error state** if the fetch fails (with a retry button)
-   - Show an **empty state** if no records exist
+Async fetch state uses a discriminated union driven by `useReducer` inside `useTransactions`:
 
-2. **Search & Filter**
-   - Client-side search across Reference and Description
-   - Search must be **debounced** (300ms minimum — no on-every-keystroke calls)
-   - Filter by Account ID (dropdown or select)
-
-3. **Detail View**
-   - Clicking a record should expand it or navigate to a detail view
-   - Show full description, all fields, and a "Back" action
-
-### Bonus (Top 10% separators)
-
-- [ ] Pagination (10 records per page) OR infinite scroll
-- [ ] Sort by ID ascending/descending
-- [ ] URL-based state (search query + filter reflected in URL params)
-- [ ] Accessible markup (ARIA labels, keyboard navigation)
-- [ ] Dark mode toggle
-
----
-
-## Technical Requirements
-
-- **TypeScript** — strict mode preferred, no `any`
-- **Next.js** (v13+ App Router)
-- State management: React built-ins only (`useState`, `useReducer`, `useContext`) — no Redux unless you have a strong reason
-- No UI component library required, but you may use one (Tailwind, shadcn, Chakra — your call)
-- No backend needed — this is a pure frontend task
-
----
-
-## Project Structure (Not strict)
-
-```
-frontend_task/
-├── src/
-│   ├── components/
-│   │   ├── TransactionList.tsx
-│   │   ├── TransactionCard.tsx
-│   │   ├── TransactionDetail.tsx
-│   │   ├── SearchBar.tsx
-│   │   └── states/
-│   │       ├── LoadingSkeleton.tsx
-│   │       ├── ErrorState.tsx
-│   │       └── EmptyState.tsx
-│   ├── hooks/
-│   │   ├── useTransactions.ts
-│   │   └── useDebounce.ts
-│   ├── types/
-│   │   └── index.ts
-│   ├── utils/
-│   │   └── filter.ts
-│   └── App.tsx (or page.tsx for Next.js)
-├── public/
-├── tsconfig.json
-├── package.json
-└── README.md
-```
-
----
-
-## What NOT To Do
-
-- Do not use `useEffect` chains to manage state that belongs in a custom hook
-- Do not use `any` — ever
-- Do not skip loading/error/empty states — these are not optional
-- Do not submit without testing the fetch failure path (you can temporarily break the URL to verify)
-- Do not over-style at the expense of functionality
-
----
-
-## State Management Expectations
-
-We expect to see deliberate state design. At minimum, your fetch state should handle:
-
-```typescript
-type FetchState<T> =
+```ts
+type AsyncState<T> =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "success"; data: T }
   | { status: "error"; message: string };
 ```
 
-> If you use a `boolean isLoading` + separate `error` + separate `data` trio of states, you will be asked why in the review call. Know your decision.
+This was a deliberate choice over the common `isLoading + error + data` trio. A boolean trio allows impossible states — you can have `isLoading: true` and `error: "..."` simultaneously. The discriminated union makes these states mutually exclusive at the type level, so the compiler enforces correctness and every render branch is exhaustive.
+
+### Data Flow
+
+```
+useTransactions (fetch + reducer)
+       ↓
+   Home (page.tsx)
+   ├── filters, pagination, sort → applyFilters()
+   ├── TransactionList → TransactionCard (list view)
+   └── TransactionDetail (detail view)
+```
+
+All derived state (filtered results, total pages) is computed synchronously in `applyFilters` on each render — no secondary `useEffect` chains to sync derived state back into `useState`. Filters and pagination live in `Home` as plain `useState` values and are passed down as props.
+
+### URL-Based State
+
+All interactive state (search query, account filter, page, sort direction, selected record ID) is mirrored to URL search params via `router.replace` in a single `useEffect` that watches all five values. This means the view is fully bookmarkable and survives a refresh.
+
+### Search Debouncing
+
+`useDebounce` wraps the raw search input value with a 300ms delay. The debounced value (not the live value) is what `applyFilters` and the URL sync receive — so filtering and URL writes only fire when the user pauses typing, not on every keystroke.
 
 ---
 
-## Submission
+## Assumptions
 
-- GitHub repo (preferred) OR zip archive
-- The app must run locally with: `npm install && npm run dev`
-- Deadline: **72 hours from receipt**
-- Include a `README.md` (see below)
-
----
-
-## Required README Contents
-
-Your README **must** answer:
-
-1. **Approach** — how did you structure state and data flow?
-2. **Assumptions** — what did you decide where the spec was silent?
-3. **Trade-offs** — what did you skip and why?
-4. **What you'd improve** — with more time?
-5. **How to run** — exact commands for a clean setup
+- The spec didn't say anything about refreshing data, and since `jsonplaceholder` is static anyway, I just fetch once on mount and leave it at that. No polling, no cache logic — didn't feel necessary here.
+- "Short description preview" wasn't defined so I made it one line with `line-clamp-1`. Felt like the cleanest way to keep the list scannable without truncating too aggressively.
+- I didn't hardcode any account IDs for the filter dropdown. I derived them straight from the data using `getUniqueAccountIds` — that way if the data ever changes, the dropdown just works without any manual updates.
+- Whenever the search query or account filter changes, I reset back to page 1. Staying on page 5 after narrowing results down to 8 records would just be confusing, so resetting felt like the obvious call.
+- I run sort after search and filter, then paginate last. That's the order that makes sense to me — you filter down to what's relevant, sort that, then slice into pages.
 
 ---
 
-## Evaluation Rubric
+## Trade-offs & What Was Skipped
 
-| Area                                | Weight |
-|-------------------------------------|--------|
-| State management correctness        | 30%    |
-| Component structure & reusability   | 30%    |
-| UX quality (loading/error/empty)    | 20%    |
-| Communication (README)              | 20%    |
-
----
-
-## Environment
-
-- Node.js v18+
-- TypeScript v5+
-- React v18+ or Next.js v13+
-- Any CSS approach (Tailwind, CSS Modules, plain CSS)
+| Area | Decision | Reason |
+|---|---|---|
+| No `React.memo` on `TransactionCard` | Skipped | With 10 rows per page the re-render cost is negligible; premature optimisation here adds noise |
+| No virtualization | Skipped | 100 records total, paginated to 10 — no need |
+| No toast/snackbar for retry feedback | Skipped | The `ErrorState` component already shows the error inline with a retry button — a toast would be redundant |
+| `SortState` interface defined but sort managed as raw `SortDirection` | Left in types | Minor — would clean up on a second pass |
+| No `<form>` wrapper on search | Intentional | No submission event needed; `onChange` + debounce is sufficient, and a bare `<form>` would require `e.preventDefault()` for no gain |
 
 ---
 
-## Questions?
+## What I'd Improve With More Time
 
-Ask. We respect engineers who identify ambiguity and resolve it with a question, not a wrong assumption.
+**Error boundary**
+There's no React error boundary catching unexpected render errors. The `ErrorState` component only handles the fetch failure path — a boundary would catch anything else.
 
-**— TaxStreem Engineering**
+**Persistent dark mode preference**
+The dark mode toggle resets on refresh. Persisting to `localStorage` (or reading `prefers-color-scheme` on first load) would make the preference stick.
+
+**Loading state for page transitions**
+When paginating there's no visual feedback between page changes, since data is already local. If this ever moved to a server-paginated API, a per-page loading indicator would be needed.
+
+---
+
+## Project Structure
+
+```
+frontend_task/
+├── src/
+│   ├── components/
+│   │   ├── TransactionList.tsx     — list shell, column headers, pagination
+│   │   ├── TransactionCard.tsx     — single row, staggered entry animation
+│   │   ├── TransactionDetail.tsx   — full record view
+│   │   ├── SearchBar.tsx           — debounced search input
+│   │   ├── Pagination.tsx          — page controls with ellipsis
+│   │   └── states/
+│   │       ├── LoadingSkeleton.tsx
+│   │       ├── ErrorState.tsx
+│   │       └── EmptyState.tsx
+│   ├── hooks/
+│   │   ├── useTransactions.ts      — fetch + useReducer, exposes retry
+│   │   └── useDebounce.ts          — generic debounce hook
+│   ├── types/
+│   │   └── index.ts                — RawPost, TransactionRecord, AsyncState, etc.
+│   └── utils/
+│       └── filter.ts               — mapPost, applyFilters, getUniqueAccountIds
+├── app/
+│   ├── page.tsx                    — entry point, renders Home
+│   ├── Home.tsx                    — all state, URL sync, layout
+│   ├── layout.tsx                  — root layout, metadata
+│   └── globals.css                 — global styles, row-enter animation
+└── README.md
+```
+
+---
+
+## Bonus Features Completed
+
+- Pagination (10 records per page) with ellipsis
+- Sort by ID ascending / descending
+- URL-based state — search, filter, page, sort, and selected record all reflected in params
+- Accessible markup — ARIA labels, keyboard navigation (`Enter`/`Space` on cards), `aria-current` on active page
+- Dark mode toggle
